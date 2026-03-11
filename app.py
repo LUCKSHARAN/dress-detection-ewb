@@ -7,6 +7,9 @@ import numpy as np
 from flask import Flask, request, jsonify, render_template
 from ultralytics import YOLO
 
+# ── HuggingFace Spaces writable config dir ────────────────────────
+os.environ.setdefault('YOLO_CONFIG_DIR', '/tmp/ultralytics')
+
 # ── App setup ─────────────────────────────────────────────────────
 app = Flask(__name__)
 
@@ -41,9 +44,11 @@ def detect():
         if frame is None:
             return jsonify({"error": "Could not decode image"}), 400
 
+        # Resize — same as original OpenCV script
         frame = cv2.resize(frame, (960, 540))
         h, w  = frame.shape[:2]
 
+        # YOLO inference
         results = model(frame, conf=0.25, verbose=False)[0]
 
         detected_classes = set()
@@ -57,7 +62,7 @@ def detect():
 
             detected_classes.add(cls_name)
             boxes_out.append({
-                "x1":    x1 / w,
+                "x1":    x1 / w,   # normalized 0-1
                 "y1":    y1 / h,
                 "x2":    x2 / w,
                 "y2":    y2 / h,
@@ -65,13 +70,16 @@ def detect():
                 "conf":  round(conf_score, 2),
             })
 
+        # Rule 1: any informal item → INFORMAL
         if detected_classes.intersection(informal_items):
             decision = "INFORMAL"
+        # Rule 2: all mandatory formal items present → FORMAL
         elif formal_mandatory.issubset(detected_classes):
             decision = "FORMAL"
         else:
             decision = "INFORMAL"
 
+        # Temporal smoothing — 12 frame buffer
         decision_buffer.append(decision)
         final_verdict = max(set(decision_buffer), key=decision_buffer.count)
 
@@ -85,6 +93,8 @@ def detect():
         print(f"[ERROR] /detect: {e}")
         return jsonify({"error": str(e)}), 500
 
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    # HuggingFace Spaces requires port 7860
+    port = int(os.environ.get("PORT", 7860))
     app.run(debug=False, threaded=True, host="0.0.0.0", port=port)

@@ -8,6 +8,4 @@ venv/
 .DS_Store
 Thumbs.db
 *.log
-
-# Don't push model to GitHub (too large)
-# models/best.pt   ← upload separately to HuggingFace or Render
+render.yaml

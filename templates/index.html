@@ -240,6 +240,11 @@
     .btn-pause:hover { transform:translateY(-2px); box-shadow:0 8px 20px rgba(255,170,0,.3); }
     .btn-fs { background:transparent; color:var(--muted); border:1px solid var(--border); }
     .btn-fs:hover { border-color:var(--cyan); color:var(--cyan); }
+    .btn-flip { background:transparent; color:var(--cyan); border:1px solid rgba(0,229,255,0.4); }
+    .btn-flip:hover { background:rgba(0,229,255,0.08); border-color:var(--cyan); transform:translateY(-2px); }
+    /* Hide flip button on desktop, show on mobile */
+    .btn-flip { display:none; }
+    @media(max-width:900px){ .btn-flip { display:flex; } }
 
     footer {
       position:relative; z-index:1; text-align:center;
@@ -332,6 +337,7 @@
     <div class="toolbar">
       <button class="btn btn-stop"  onclick="stopDetection()">⏹ Stop</button>
       <button class="btn btn-pause" id="pauseBtn" onclick="togglePause()">⏸ Pause</button>
+      <button class="btn btn-flip"  id="flipBtn"  onclick="flipCamera()">🔄 Flip Camera</button>
       <button class="btn btn-fs"    id="fsBtn"    onclick="toggleFullscreen()">⛶ Fullscreen</button>
     </div>
   </div>
@@ -347,6 +353,7 @@
   let busy       = false;
   let frameTimer = null;
   let fpsSmooth  = 0;
+  let facingMode = 'user';   // 'user' = front, 'environment' = back
 
   const video       = document.getElementById('camVideo');
   const snapCanvas  = document.getElementById('snapCanvas');
@@ -371,10 +378,14 @@
   async function startDetection() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { width:{ideal:1280}, height:{ideal:720}, facingMode:'user' },
+        video: { width:{ideal:1280}, height:{ideal:720}, facingMode: facingMode },
         audio: false
       });
       video.srcObject = stream;
+
+      // Mirror front camera only — back camera should NOT be mirrored
+      video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+
       await new Promise(res => { video.onloadedmetadata = res; });
       await video.play();
 
@@ -465,9 +476,9 @@
       const px2 = b.x2 * W;
       const py2 = b.y2 * H;
 
-      // Mirror X (video is CSS mirrored)
-      const mx1 = W - px2;
-      const mx2 = W - px1;
+      // Mirror X only for front camera (video is CSS mirrored only when facingMode='user')
+      const mx1 = facingMode === 'user' ? W - px2 : px1;
+      const mx2 = facingMode === 'user' ? W - px1 : px2;
 
       const isBad = BAD_ITEMS.has(b.label);
 
@@ -563,6 +574,52 @@
       boxCanvas.width  = rect.width;
       boxCanvas.height = rect.height;
     }, 100);
+  }
+
+  // ── Flip Camera (front ↔ back) ────────────────────────────────
+  async function flipCamera() {
+    if (!running) return;
+    const flipBtn = document.getElementById('flipBtn');
+    flipBtn.textContent = '⏳ Switching...';
+    flipBtn.disabled = true;
+
+    // Stop current stream
+    clearTimeout(frameTimer);
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+
+    // Toggle facing mode
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    flipBtn.textContent = facingMode === 'user' ? '🔄 Flip Camera' : '🤳 Front Camera';
+
+    // Restart with new camera
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width:{ideal:1280}, height:{ideal:720}, facingMode: facingMode },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      // Mirror front only
+      video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+
+      await new Promise(res => { video.onloadedmetadata = res; });
+      await video.play();
+
+      // Recalculate canvas size
+      const W = video.videoWidth  || 960;
+      const H = video.videoHeight || 540;
+      snapCanvas.width  = W; snapCanvas.height  = H;
+      boxCanvas.width   = W; boxCanvas.height   = H;
+
+      paused = false;
+      scheduleDetect();
+    } catch(err) {
+      alert('Could not switch camera: ' + err.message);
+      // Fall back to previous
+      facingMode = facingMode === 'user' ? 'environment' : 'user';
+      flipBtn.textContent = facingMode === 'user' ? '🔄 Flip Camera' : '🤳 Front Camera';
+    }
+    flipBtn.disabled = false;
   }
 
   document.addEventListener('keydown', e => {

@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dress Code Detection</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:      #080c10;
+      --surface: #0e1318;
+      --border:  #1e2a35;
+      --cyan:    #00e5ff;
+      --green:   #00ff88;
+      --red:     #ff3c5a;
+      --orange:  #ffaa00;
+      --text:    #e8f0f8;
+      --muted:   #4a5a6a;
+    }
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      background:var(--bg); color:var(--text);
+      font-family:'DM Sans',sans-serif;
+      min-height:100vh; overflow-x:hidden;
+    }
+    body::before {
+      content:''; position:fixed; inset:0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.025) 1px,transparent 1px),
+        linear-gradient(90deg,rgba(0,229,255,0.025) 1px,transparent 1px);
+      background-size:40px 40px; pointer-events:none; z-index:0;
+    }
+
+    /* ── Header ── */
+    header {
+      position:relative; z-index:10;
+      display:flex; align-items:center; justify-content:space-between;
+      padding:14px 28px;
+      border-bottom:1px solid var(--border);
+      background:rgba(8,12,16,0.97);
+    }
+    .logo { display:flex; align-items:center; gap:12px; }
+    .logo-icon {
+      width:36px; height:36px;
+      background:linear-gradient(135deg,var(--cyan),#0077ff);
+      border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:1.1rem;
+    }
+    .logo-text { font-family:'Bebas Neue',sans-serif; font-size:1.45rem; letter-spacing:2px; color:var(--cyan); }
+    .logo-sub  { font-size:0.65rem; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
+
+    .header-right { display:flex; align-items:center; gap:10px; }
+    .fps-badge {
+      font-size:0.72rem; color:var(--muted);
+      background:var(--surface); border:1px solid var(--border);
+      padding:5px 12px; border-radius:8px; font-family:monospace;
+    }
+    .status-pill {
+      display:flex; align-items:center; gap:8px; font-size:0.78rem;
+      background:var(--surface); border:1px solid var(--border);
+      padding:5px 14px; border-radius:20px;
+    }
+    .status-pill .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); transition:all .4s; }
+    .status-pill .slabel { color:var(--muted); transition:color .3s; }
+    .status-pill.live .dot    { background:var(--green); box-shadow:0 0 8px var(--green); animation:pulse 2s infinite; }
+    .status-pill.live .slabel { color:var(--green); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    /* ── Main ── */
+    main {
+      position:relative; z-index:1;
+      display:flex; flex-direction:column; align-items:center;
+      padding:24px 12px 48px; gap:20px;
+    }
+
+    /* ── Welcome ── */
+    .welcome {
+      width:100%; max-width:520px; text-align:center;
+      padding:60px 20px;
+      display:flex; flex-direction:column; align-items:center; gap:20px;
+    }
+    .welcome-icon { font-size:3.5rem; animation:float 3s ease-in-out infinite; }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+    .welcome h2 { font-family:'Bebas Neue',sans-serif; font-size:2.4rem; letter-spacing:3px; color:var(--cyan); }
+    .welcome p  { color:var(--muted); font-size:0.88rem; line-height:1.8; }
+    .tip-box {
+      background:rgba(0,229,255,0.05); border:1px solid rgba(0,229,255,0.2);
+      border-radius:10px; padding:12px 18px;
+      font-size:0.82rem; color:var(--cyan); line-height:1.8; text-align:left; width:100%;
+    }
+    .tip-box b { color:#fff; }
+
+    /* ── Camera section ── */
+    .camera-section { width:100%; max-width:900px; display:none; }
+    .camera-section.visible { display:block; }
+
+    /* Fullscreen */
+    .camera-section.fullscreen {
+      position:fixed; inset:0; max-width:100%;
+      z-index:100; background:#000;
+      display:flex; flex-direction:column;
+    }
+    .camera-section.fullscreen .cam-outer {
+      flex:1; border-radius:0; border:none; aspect-ratio:unset;
+    }
+    .camera-section.fullscreen .cam-outer video {
+      width:100%; height:100%; object-fit:contain;
+    }
+    .camera-section.fullscreen .toolbar { border-radius:0; }
+
+    /* Tip banner */
+    .cam-tip {
+      background:rgba(0,229,255,0.06);
+      border:1px solid rgba(0,229,255,0.18);
+      border-bottom:none; border-radius:12px 12px 0 0;
+      padding:8px 16px; font-size:0.76rem; color:var(--cyan);
+      display:flex; align-items:center; gap:8px;
+    }
+
+    /* Camera outer */
+    .cam-outer {
+      position:relative; overflow:hidden;
+      border:1px solid var(--border); border-bottom:none;
+      background:#000; aspect-ratio:16/9;
+    }
+
+    /* Video — always visible, no crop */
+    #camVideo {
+      position:absolute; inset:0;
+      width:100%; height:100%;
+      object-fit:contain;
+      transform:scaleX(-1);
+      display:block;
+    }
+
+    /* Box overlay canvas */
+    #boxCanvas {
+      position:absolute; inset:0;
+      width:100%; height:100%;
+      pointer-events:none; z-index:3;
+    }
+
+    /* Hidden canvases */
+    #snapCanvas { display:none; }
+
+    /* Corner brackets */
+    .cam-outer::before,.cam-outer::after,.corner-br,.corner-bl {
+      content:''; position:absolute; width:26px; height:26px;
+      border-color:var(--cyan); border-style:solid; z-index:5; pointer-events:none;
+    }
+    .cam-outer::before { top:12px; left:12px;    border-width:2px 0 0 2px; }
+    .cam-outer::after  { top:12px; right:12px;   border-width:2px 2px 0 0; }
+    .corner-br         { bottom:12px; right:12px; border-width:0 2px 2px 0; }
+    .corner-bl         { bottom:12px; left:12px;  border-width:0 0 2px 2px; }
+
+    /* REC badge */
+    .rec-badge {
+      position:absolute; top:14px; left:50%; transform:translateX(-50%);
+      background:rgba(255,60,90,.15); border:1px solid var(--red);
+      color:var(--red); font-size:.6rem; font-weight:600; letter-spacing:2px;
+      padding:4px 12px; border-radius:4px;
+      display:none; align-items:center; gap:6px; z-index:6;
+    }
+    .rec-badge.show { display:flex; }
+    .rec-badge .rdot {
+      width:6px; height:6px; border-radius:50%;
+      background:var(--red); animation:pulse 1s infinite;
+    }
+
+    /* ── Verdict bar — bottom of camera ── */
+    .verdict-bar {
+      position:absolute; bottom:0; left:0; right:0;
+      padding:16px 20px 14px;
+      background:linear-gradient(transparent, rgba(5,8,12,0.97));
+      display:none; align-items:flex-end; justify-content:space-between;
+      z-index:6; flex-wrap:wrap; gap:10px;
+    }
+    .verdict-bar.show { display:flex; }
+
+    .verdict-left { display:flex; flex-direction:column; gap:4px; }
+
+    .verdict-label {
+      font-size:0.65rem; letter-spacing:2px; color:var(--muted);
+      text-transform:uppercase; font-weight:600;
+    }
+
+    /* Big verdict text — matches your OpenCV style */
+    .verdict-text {
+      font-family:'Bebas Neue',sans-serif;
+      font-size:3rem; letter-spacing:5px;
+      line-height:1; transition:color .3s, text-shadow .3s;
+    }
+    .verdict-text.formal    { color:var(--green); text-shadow:0 0 32px rgba(0,255,136,.65); }
+    .verdict-text.informal  { color:var(--red);   text-shadow:0 0 32px rgba(255,60,90,.65); }
+    .verdict-text.detecting { color:var(--orange); text-shadow:none; }
+
+    /* Detected item tags */
+    .tag-col { display:flex; flex-direction:column; align-items:flex-end; gap:5px; }
+    .tag-row { display:flex; flex-wrap:wrap; gap:5px; justify-content:flex-end; }
+    .dtag {
+      font-size:.67rem; font-weight:600;
+      padding:3px 10px; border-radius:12px;
+      background:rgba(0,229,255,.1); border:1px solid rgba(0,229,255,.3); color:var(--cyan);
+    }
+    .dtag.bad { background:rgba(255,60,90,.1); border-color:rgba(255,60,90,.35); color:var(--red); }
+
+    /* Init overlay */
+    .init-overlay {
+      position:absolute; inset:0; background:rgba(8,12,16,.82);
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center; gap:14px; z-index:10;
+    }
+    .init-overlay.gone { display:none; }
+    .spinner {
+      width:46px; height:46px; border:3px solid var(--border);
+      border-top-color:var(--cyan); border-radius:50%; animation:spin .8s linear infinite;
+    }
+    .init-txt { color:var(--cyan); font-size:.76rem; letter-spacing:2px; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      display:flex; align-items:center; justify-content:center;
+      gap:12px; flex-wrap:wrap; padding:14px 20px;
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:0 0 14px 14px;
+    }
+    .btn {
+      display:flex; align-items:center; gap:7px;
+      padding:10px 22px; border-radius:10px;
+      font-family:'DM Sans',sans-serif; font-size:.87rem; font-weight:600;
+      cursor:pointer; border:none; transition:all .2s; letter-spacing:.4px;
+    }
+    .btn:active { transform:scale(.97)!important; }
+    .btn-start { background:linear-gradient(135deg,var(--green),#00cc66); color:#000; }
+    .btn-start:hover { transform:translateY(-2px); box-shadow:0 8px 20px rgba(0,255,136,.3); }
+    .btn-stop  { background:linear-gradient(135deg,var(--red),#cc2244); color:#fff; }
+    .btn-stop:hover  { transform:translateY(-2px); box-shadow:0 8px 20px rgba(255,60,90,.3); }
+    .btn-pause { background:linear-gradient(135deg,var(--orange),#cc8800); color:#000; }
+    .btn-pause:hover { transform:translateY(-2px); box-shadow:0 8px 20px rgba(255,170,0,.3); }
+    .btn-fs { background:transparent; color:var(--muted); border:1px solid var(--border); }
+    .btn-fs:hover { border-color:var(--cyan); color:var(--cyan); }
+    .btn-flip { background:transparent; color:var(--cyan); border:1px solid rgba(0,229,255,0.4); }
+    .btn-flip:hover { background:rgba(0,229,255,0.08); border-color:var(--cyan); transform:translateY(-2px); }
+    /* Hide flip button on desktop, show on mobile */
+    .btn-flip { display:none; }
+    @media(max-width:900px){ .btn-flip { display:flex; } }
+
+    footer {
+      position:relative; z-index:1; text-align:center;
+      padding:0 0 28px; font-size:.7rem; color:var(--muted); letter-spacing:1px;
+    }
+
+    @media(max-width:600px){
+      header { padding:10px 14px; }
+      .logo-text { font-size:1.1rem; }
+      .btn { padding:9px 13px; font-size:.8rem; }
+      .verdict-text { font-size:2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🎽</div>
+    <div>
+      <div class="logo-text">DressCode AI</div>
+      <div class="logo-sub">Real-Time Detection System</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="fps-badge" id="fpsBadge">-- FPS</div>
+    <div class="status-pill" id="statusPill">
+      <div class="dot"></div>
+      <span class="slabel">OFFLINE</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- Welcome -->
+  <div class="welcome" id="welcomeScreen">
+    <div class="welcome-icon">🎽</div>
+    <h2>Dress Code Detector</h2>
+    <p>Uses the same detection logic as your OpenCV script.<br/>
+       FORMAL / INFORMAL verdict with temporal smoothing.</p>
+    <div class="tip-box">
+      📌 <b>For best accuracy (same as your OpenCV version):</b><br/>
+      • Stand <b>1.5 – 2 meters</b> away from the camera<br/>
+      • Your <b>full body must be visible</b> — head to toe<br/>
+      • Ensure <b>good lighting</b> in the room
+    </div>
+    <button class="btn btn-start" onclick="startDetection()">▶ Start Detection</button>
+  </div>
+
+  <!-- Camera section -->
+  <div class="camera-section" id="cameraSection">
+
+    <div class="cam-tip">
+      📌 Stand <strong>1.5–2 meters away</strong> — full body must be visible for accurate detection
+    </div>
+
+    <div class="cam-outer" id="camOuter">
+      <div class="corner-br"></div>
+      <div class="corner-bl"></div>
+      <div class="rec-badge" id="recBadge"><div class="rdot"></div> LIVE</div>
+
+      <!-- Live video — always smooth, no lag -->
+      <video id="camVideo" autoplay playsinline muted></video>
+
+      <!-- Bounding box overlay canvas -->
+      <canvas id="boxCanvas"></canvas>
+
+      <!-- Hidden canvas for frame grabbing -->
+      <canvas id="snapCanvas"></canvas>
+
+      <!-- Verdict bar -->
+      <div class="verdict-bar" id="verdictBar">
+        <div class="verdict-left">
+          <div class="verdict-label">Dress Code</div>
+          <div class="verdict-text detecting" id="verdictText">DETECTING...</div>
+        </div>
+        <div class="tag-col">
+          <div class="tag-row" id="tagRow"></div>
+        </div>
+      </div>
+
+      <!-- Init spinner -->
+      <div class="init-overlay" id="initOverlay">
+        <div class="spinner"></div>
+        <div class="init-txt">STARTING CAMERA...</div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn btn-stop"  onclick="stopDetection()">⏹ Stop</button>
+      <button class="btn btn-pause" id="pauseBtn" onclick="togglePause()">⏸ Pause</button>
+      <button class="btn btn-flip"  id="flipBtn"  onclick="flipCamera()">🔄 Flip Camera</button>
+      <button class="btn btn-fs"    id="fsBtn"    onclick="toggleFullscreen()">⛶ Fullscreen</button>
+    </div>
+  </div>
+
+</main>
+
+<footer>Powered by YOLOv8 &nbsp;·&nbsp; Flask &nbsp;·&nbsp; OpenCV</footer>
+
+<script>
+  let stream     = null;
+  let running    = false;
+  let paused     = false;
+  let busy       = false;
+  let frameTimer = null;
+  let fpsSmooth  = 0;
+  let facingMode = 'user';   // 'user' = front, 'environment' = back
+
+  const video       = document.getElementById('camVideo');
+  const snapCanvas  = document.getElementById('snapCanvas');
+  const boxCanvas   = document.getElementById('boxCanvas');
+  const boxCtx      = boxCanvas.getContext('2d');
+  const initOverlay = document.getElementById('initOverlay');
+  const verdictBar  = document.getElementById('verdictBar');
+  const verdictText = document.getElementById('verdictText');
+  const tagRow      = document.getElementById('tagRow');
+  const statusPill  = document.getElementById('statusPill');
+  const recBadge    = document.getElementById('recBadge');
+  const fpsBadge    = document.getElementById('fpsBadge');
+  const pauseBtn    = document.getElementById('pauseBtn');
+
+  // Same sets as your Python script
+  const BAD_ITEMS = new Set([
+    'formal_shirt_untucked','tshirt','informal_pant',
+    'informal_shoes','cap','band'
+  ]);
+
+  // ── Start ─────────────────────────────────────────────────────
+  async function startDetection() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width:{ideal:1280}, height:{ideal:720}, facingMode: facingMode },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      // Mirror front camera only — back camera should NOT be mirrored
+      video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+
+      await new Promise(res => { video.onloadedmetadata = res; });
+      await video.play();
+
+      const W = video.videoWidth  || 960;
+      const H = video.videoHeight || 540;
+      snapCanvas.width  = W;  snapCanvas.height  = H;
+      boxCanvas.width   = W;  boxCanvas.height   = H;
+
+      document.getElementById('welcomeScreen').style.display = 'none';
+      document.getElementById('cameraSection').classList.add('visible');
+      statusPill.classList.add('live');
+      statusPill.querySelector('.slabel').textContent = 'LIVE';
+      recBadge.classList.add('show');
+      verdictBar.classList.add('show');
+
+      running = true;
+      paused  = false;
+
+      setTimeout(() => {
+        initOverlay.classList.add('gone');
+        scheduleDetect();
+      }, 600);
+
+    } catch(err) {
+      alert('Camera access denied.\nPlease allow camera permission and refresh.');
+      console.error(err);
+    }
+  }
+
+  // ── Schedule next detection — 150ms = ~6 FPS (matches your script's speed) ──
+  function scheduleDetect() {
+    if (!running || paused) return;
+    frameTimer = setTimeout(sendFrame, 150);
+  }
+
+  // ── Send frame to server ──────────────────────────────────────
+  async function sendFrame() {
+    if (!running || paused || busy) { scheduleDetect(); return; }
+    busy = true;
+    const t0 = performance.now();
+
+    try {
+      // Grab raw (unmirrored) frame — same as your cap.read()
+      const sCtx = snapCanvas.getContext('2d');
+      sCtx.drawImage(video, 0, 0, snapCanvas.width, snapCanvas.height);
+
+      // Quality 0.82 = close to what OpenCV reads from webcam
+      const imageData = snapCanvas.toDataURL('image/jpeg', 0.82);
+
+      const res  = await fetch('/detect', {
+        method:  'POST',
+        headers: {'Content-Type':'application/json'},
+        body:    JSON.stringify({image: imageData})
+      });
+      if (!res.ok) throw new Error('Server ' + res.status);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      // Draw boxes on overlay canvas
+      drawBoxes(data.boxes || [], boxCanvas.width, boxCanvas.height);
+
+      // Update verdict text
+      updateVerdict(data.verdict, data.detected);
+
+      // FPS
+      const elapsed = performance.now() - t0;
+      fpsSmooth = fpsSmooth * 0.75 + (1000 / elapsed) * 0.25;
+      fpsBadge.textContent = Math.round(fpsSmooth) + ' FPS';
+
+    } catch(e) {
+      console.warn('Frame error:', e.message);
+    }
+
+    busy = false;
+    scheduleDetect();
+  }
+
+  // ── Draw bounding boxes ───────────────────────────────────────
+  // Uses normalized coords (0.0–1.0) from server
+  // Mirrors X to match CSS scaleX(-1) on video
+  function drawBoxes(boxes, W, H) {
+    boxCtx.clearRect(0, 0, W, H);
+
+    boxes.forEach(b => {
+      // Pixel coords from normalized
+      const px1 = b.x1 * W;
+      const py1 = b.y1 * H;
+      const px2 = b.x2 * W;
+      const py2 = b.y2 * H;
+
+      // Mirror X only for front camera (video is CSS mirrored only when facingMode='user')
+      const mx1 = facingMode === 'user' ? W - px2 : px1;
+      const mx2 = facingMode === 'user' ? W - px1 : px2;
+
+      const isBad = BAD_ITEMS.has(b.label);
+
+      // Box color — same idea as your OpenCV script colors
+      const boxColor   = isBad ? '#ff3c5a' : '#00e5ff';
+      const labelBg    = isBad ? '#ff3c5a' : '#00e5ff';
+      const labelColor = isBad ? '#ffffff' : '#000000';
+
+      // Draw box
+      boxCtx.strokeStyle = boxColor;
+      boxCtx.lineWidth   = 2.5;
+      boxCtx.strokeRect(mx1, py1, mx2 - mx1, py2 - py1);
+
+      // Label text
+      const text = `${b.label.replace(/_/g,' ')}  ${Math.round(b.conf * 100)}%`;
+      boxCtx.font = 'bold 13px DM Sans, sans-serif';
+      const tw = boxCtx.measureText(text).width;
+
+      // Label background
+      const lx = Math.max(mx1, 0);
+      const ly = Math.max(py1 - 24, 0);
+      boxCtx.fillStyle = labelBg;
+      boxCtx.beginPath();
+      if (boxCtx.roundRect) {
+        boxCtx.roundRect(lx, ly, tw + 12, 22, 4);
+      } else {
+        boxCtx.rect(lx, ly, tw + 12, 22);
+      }
+      boxCtx.fill();
+
+      // Label text
+      boxCtx.fillStyle = labelColor;
+      boxCtx.fillText(text, lx + 6, ly + 15);
+    });
+  }
+
+  // ── Update verdict display ────────────────────────────────────
+  function updateVerdict(verdict, detected) {
+    verdictText.textContent = verdict;
+    verdictText.className   = 'verdict-text';
+
+    if      (verdict === 'FORMAL')   verdictText.classList.add('formal');
+    else if (verdict === 'INFORMAL') verdictText.classList.add('informal');
+    else                             verdictText.classList.add('detecting');
+
+    // Show detected item tags
+    tagRow.innerHTML = '';
+    (detected || []).slice(0, 6).forEach(item => {
+      const t = document.createElement('span');
+      t.className   = 'dtag' + (BAD_ITEMS.has(item) ? ' bad' : '');
+      t.textContent = item.replace(/_/g,' ');
+      tagRow.appendChild(t);
+    });
+  }
+
+  // ── Pause ─────────────────────────────────────────────────────
+  function togglePause() {
+    paused = !paused;
+    pauseBtn.textContent = paused ? '▶ Resume' : '⏸ Pause';
+    statusPill.querySelector('.slabel').textContent = paused ? 'PAUSED' : 'LIVE';
+    if (!paused) scheduleDetect();
+    else { clearTimeout(frameTimer); boxCtx.clearRect(0,0,boxCanvas.width,boxCanvas.height); }
+  }
+
+  // ── Stop ──────────────────────────────────────────────────────
+  function stopDetection() {
+    running = false; paused = false;
+    clearTimeout(frameTimer);
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    video.srcObject = null;
+
+    document.getElementById('cameraSection').classList.remove('visible');
+    document.getElementById('welcomeScreen').style.display = 'flex';
+    initOverlay.classList.remove('gone');
+    verdictBar.classList.remove('show');
+    recBadge.classList.remove('show');
+    statusPill.classList.remove('live');
+    statusPill.querySelector('.slabel').textContent = 'OFFLINE';
+    fpsBadge.textContent = '-- FPS';
+    pauseBtn.textContent = '⏸ Pause';
+    boxCtx.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
+  }
+
+  // ── Fullscreen ────────────────────────────────────────────────
+  function toggleFullscreen() {
+    const s   = document.getElementById('cameraSection');
+    const btn = document.getElementById('fsBtn');
+    const fs  = s.classList.toggle('fullscreen');
+    btn.textContent = fs ? '✕ Exit' : '⛶ Fullscreen';
+    document.body.style.overflow = fs ? 'hidden' : '';
+    setTimeout(() => {
+      const rect = document.getElementById('camOuter').getBoundingClientRect();
+      boxCanvas.width  = rect.width;
+      boxCanvas.height = rect.height;
+    }, 100);
+  }
+
+  // ── Flip Camera (front ↔ back) ────────────────────────────────
+  async function flipCamera() {
+    if (!running) return;
+    const flipBtn = document.getElementById('flipBtn');
+    flipBtn.textContent = '⏳ Switching...';
+    flipBtn.disabled = true;
+
+    // Stop current stream
+    clearTimeout(frameTimer);
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+
+    // Toggle facing mode
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    flipBtn.textContent = facingMode === 'user' ? '🔄 Flip Camera' : '🤳 Front Camera';
+
+    // Restart with new camera
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width:{ideal:1280}, height:{ideal:720}, facingMode: facingMode },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      // Mirror front only
+      video.style.transform = facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+
+      await new Promise(res => { video.onloadedmetadata = res; });
+      await video.play();
+
+      // Recalculate canvas size
+      const W = video.videoWidth  || 960;
+      const H = video.videoHeight || 540;
+      snapCanvas.width  = W; snapCanvas.height  = H;
+      boxCanvas.width   = W; boxCanvas.height   = H;
+
+      paused = false;
+      scheduleDetect();
+    } catch(err) {
+      alert('Could not switch camera: ' + err.message);
+      // Fall back to previous
+      facingMode = facingMode === 'user' ? 'environment' : 'user';
+      flipBtn.textContent = facingMode === 'user' ? '🔄 Flip Camera' : '🤳 Front Camera';
+    }
+    flipBtn.disabled = false;
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      const s = document.getElementById('cameraSection');
+      if (s.classList.contains('fullscreen')) toggleFullscreen();
+    }
+  });
+</script>
+
+</body>
+</html>
